@@ -94,7 +94,7 @@ export class InstancePool {
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 
 /** Pools shared by all rooms. Every geometry is unit sized with its base at y=0. */
-export type PoolKey = 'tile' | 'box' | 'cyl' | 'taper' | 'blob' | 'glow' | 'glass';
+export type PoolKey = 'tile' | 'box' | 'cyl' | 'taper' | 'blob' | 'glow' | 'glass' | 'screen';
 
 /**
  * A primitive placed relative to its owner. `size` scales the unit geometry;
@@ -165,6 +165,8 @@ export class Kit {
         lambert({ transparent: true, opacity: 0.72, depthWrite: false }),
         64,
       ),
+      // Unlit boxes for computer screens; recoloured per frame to glow/flicker.
+      screen: pool('screen', box, this.own(new THREE.MeshBasicMaterial()), 64),
     };
     this.pools.glass.mesh.renderOrder = 1;
   }

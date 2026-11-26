@@ -1,10 +1,14 @@
 import * as THREE from 'three';
-import type { Runner } from '@dash-iso/shared';
+import type { Runner, WorldState } from '@dash-iso/shared';
+import { deskLayout, workerSite, type DeskSpot } from './desks.js';
+import type { Effects } from './effects.js';
 import type { Kit, Part, PartHandle } from './instancing.js';
 import { isFrontWall, seededRandom, type RoomRect, type WallSide } from './layout.js';
 import { COLORS, ROOM_THEMES, dim, type RoomTheme } from './palette.js';
 import * as P from './props.js';
 import { PLAQUE_ASPECT, plaqueTexture } from './textures.js';
+import { Worker } from './worker.js';
+import { syncSlot } from './worker-fsm.js';
 
 export const WALL = {
   thickness: 0.22,
@@ -152,15 +156,45 @@ export function themeFor(id: string): RoomTheme {
   return ROOM_THEMES[Math.floor(seededRandom(`theme:${id}`)() * ROOM_THEMES.length)]!;
 }
 
-/** Scene objects for one runner's room. Owns its instances and plaque. */
+/** Hooks a room needs from its world (all optional, for tests). */
+export interface RoomContext {
+  effects?: Effects;
+  projectName?: (id: string) => string;
+}
+
+interface DeskHandles {
+  spot: DeskSpot;
+  parts: PartHandle[];
+  screen: PartHandle;
+}
+
+const SCREEN = {
+  off: 0x10131c,
+  idle: 0x23405a,
+  on: 0x7fe0ff,
+  flicker: 0xb6f4ff,
+} as const;
+
+/**
+ * Scene objects for one runner's room. Owns its instances, plaque, one desk
+ * per slot and one worker per slot.
+ */
 export class Room {
   readonly theme: RoomTheme;
+  /** Room-local space (origin at the room's min corner); workers live here. */
+  readonly group = new THREE.Group();
   private readonly base: THREE.Matrix4;
   private statics: PartHandle[] = [];
   private structure: PartHandle[] = [];
+  private desks: DeskHandles[] = [];
+  private workers: Worker[] = [];
+  /** Workers whose slot was removed, walking out of the door. */
+  private leaving: Worker[] = [];
   private readonly plaque: THREE.Sprite;
   private name: string;
   private online: boolean;
+  private readonly tmp = new THREE.Vector3();
+  private time = 0;
 
   constructor(
     private readonly kit: Kit,
@@ -169,6 +203,8 @@ export class Room {
     runner: Runner,
     readonly rect: RoomRect,
     private step: number,
+    private readonly ctx: RoomContext = {},
+    state?: WorldState,
   ) {
     this.theme = themeFor(runnerId);
     this.name = runner.name;
@@ -180,6 +216,10 @@ export class Room {
     ];
     this.statics = parts.map((p) => kit.place(p, this.base, this.colorOf(p)));
     this.buildStructure();
+
+    this.group.name = `room-${runnerId}`;
+    this.group.position.set(rect.x0, 0, rect.z0);
+    parent.add(this.group);
 
     this.plaque = new THREE.Sprite(
       new THREE.SpriteMaterial({ map: plaqueTexture(this.name, this.online), transparent: true }),
@@ -194,10 +234,30 @@ export class Room {
     );
     this.plaque.renderOrder = 2;
     parent.add(this.plaque);
+
+    this.syncSlots(runner, state, true);
   }
 
   get isOnline(): boolean {
     return this.online;
+  }
+
+  get deskCount(): number {
+    return this.desks.length;
+  }
+
+  /** Workers by slot index (excludes ones walking out). */
+  get slotWorkers(): readonly Worker[] {
+    return this.workers;
+  }
+
+  /** Every worker currently in the scene, including ones leaving. */
+  get allWorkers(): readonly Worker[] {
+    return [...this.workers, ...this.leaving];
+  }
+
+  worker(slot: number): Worker | undefined {
+    return this.workers[slot];
   }
 
   private colorOf(p: Part): number {
@@ -212,14 +272,29 @@ export class Room {
     );
   }
 
-  /** Apply name / online changes from a new snapshot. */
-  update(runner: Runner): void {
+  /** Lay out `count` desks (rebuilt from scratch when the count changes). */
+  private buildDesks(count: number): void {
+    for (const d of this.desks) for (const h of d.parts) this.kit.release(h);
+    const dims = { w: this.rect.w, d: this.rect.d };
+    this.desks = deskLayout(count, dims).map((spot) => {
+      const parts = [
+        ...P.placed(P.desk(spot.width, spot.index + this.rect.slot), spot.x, spot.z),
+        ...P.placed(P.chair(this.theme.furniture), spot.seat.pos.x, spot.seat.pos.z),
+      ];
+      const handles = parts.map((p) => this.kit.place(p, this.base, this.colorOf(p)));
+      return { spot, parts: handles, screen: handles.find((h) => h.pool === 'screen')! };
+    });
+  }
+
+  /** Apply name / online / slot changes from a new snapshot. */
+  update(runner: Runner, state?: WorldState): void {
     const onlineChanged = runner.online !== this.online;
     const nameChanged = runner.name !== this.name;
     this.online = runner.online;
     this.name = runner.name;
     if (onlineChanged) {
-      for (const h of [...this.statics, ...this.structure])
+      const desks = this.desks.flatMap((d) => d.parts);
+      for (const h of [...this.statics, ...this.structure, ...desks])
         this.kit.recolor(h, this.colorOf(h.part));
     }
     if (onlineChanged || nameChanged) {
@@ -228,6 +303,83 @@ export class Room {
       mat.map = plaqueTexture(this.name, this.online);
       mat.needsUpdate = true;
     }
+    this.syncSlots(runner, state, false);
+  }
+
+  /**
+   * One desk and one worker per slot. New slots get a worker walking in from
+   * the door (or already in place on the first snapshot); removed slots' workers
+   * walk out. Task changes drive each worker's state machine.
+   */
+  private syncSlots(runner: Runner, state: WorldState | undefined, initial: boolean): void {
+    const count = runner.slots.length;
+    const dims = { w: this.rect.w, d: this.rect.d };
+    if (count !== this.desks.length) {
+      this.buildDesks(count);
+      const spots = this.desks.map((d) => d.spot);
+      while (this.workers.length > count) {
+        const w = this.workers.pop()!;
+        w.brain.leave();
+        this.leaving.push(w);
+      }
+      for (let i = 0; i < count; i++) {
+        const site = workerSite(spots[i]!, spots, dims);
+        const existing = this.workers[i];
+        if (existing) {
+          existing.brain.setSite(site);
+          continue;
+        }
+        const w = new Worker(
+          this.runnerId,
+          i,
+          site,
+          { start: initial ? 'placed' : 'door' },
+          (id) => this.ctx.projectName?.(id) ?? id,
+        );
+        this.group.add(w.root);
+        this.workers.push(w);
+      }
+    }
+
+    const tasks = state?.tasks ?? [];
+    runner.slots.forEach((slot, i) => {
+      const w = this.workers[i];
+      if (!w) return;
+      for (const change of syncSlot(w.brain, slot, tasks)) {
+        if (change.kind === 'released' && change.outcome && !initial)
+          this.ctx.effects?.spawn(change.outcome, w.effectAnchor(this.tmp));
+        if (change.kind === 'assigned' && initial) w.brain.seatNow();
+      }
+      w.refreshTask();
+    });
+  }
+
+  /** Per-frame animation: workers and computer screens. */
+  tick(dt: number): void {
+    this.time += dt;
+    for (const w of this.workers) w.update(dt);
+    for (let i = this.leaving.length - 1; i >= 0; i--) {
+      const w = this.leaving[i]!;
+      w.update(dt);
+      if (w.brain.mode === 'gone') {
+        w.dispose();
+        this.leaving.splice(i, 1);
+      }
+    }
+    this.desks.forEach((d, i) => {
+      this.kit.recolor(d.screen, this.screenColor(this.workers[i], i));
+    });
+  }
+
+  private screenColor(w: Worker | undefined, i: number): number {
+    if (!this.online) return SCREEN.off;
+    const mode = w?.brain.mode;
+    if (mode === 'typing') {
+      // Scrolling-text flicker, out of phase per desk.
+      return Math.sin(this.time * 9 + i * 1.7) > 0.6 ? SCREEN.flicker : SCREEN.on;
+    }
+    if (mode === 'sittingDown' || (w?.brain.busy && mode === 'toDesk')) return SCREEN.on;
+    return SCREEN.idle;
   }
 
   setViewRotation(step: number): void {
@@ -237,9 +389,15 @@ export class Room {
   }
 
   dispose(): void {
-    for (const h of [...this.statics, ...this.structure]) this.kit.release(h);
+    const desks = this.desks.flatMap((d) => d.parts);
+    for (const h of [...this.statics, ...this.structure, ...desks]) this.kit.release(h);
     this.statics = [];
     this.structure = [];
+    this.desks = [];
+    for (const w of [...this.workers, ...this.leaving]) w.dispose();
+    this.workers = [];
+    this.leaving = [];
+    this.parent.remove(this.group);
     this.parent.remove(this.plaque);
     this.plaque.material.map?.dispose();
     this.plaque.material.dispose();

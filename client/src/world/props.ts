@@ -135,6 +135,55 @@ export function bin(): Part[] {
   return [{ pool: 'taper', pos: [0, 0, 0], size: [0.3, 0.38, 0.3], color: COLORS.metalDark }];
 }
 
+/**
+ * Office desk with a computer, front (the user's side) facing +z. The screen
+ * is the part with pool `screen`; owners recolour it to show activity.
+ */
+export function desk(width: number, seed: number): Part[] {
+  const w = width;
+  const top = 0.5;
+  const parts: Part[] = [
+    { pool: 'box', pos: [0, top, 0], size: [w, 0.06, 0.6], color: COLORS.wood },
+    { pool: 'box', pos: [-w / 2 + 0.05, 0, 0], size: [0.06, top, 0.54], color: COLORS.woodDark },
+    { pool: 'box', pos: [w / 2 - 0.05, 0, 0], size: [0.06, top, 0.54], color: COLORS.woodDark },
+    { pool: 'box', pos: [0, 0.12, -0.24], size: [w - 0.1, 0.36, 0.04], color: COLORS.woodDark },
+    // Monitor: foot, neck, casing and screen (facing +z).
+    { pool: 'box', pos: [0, top + 0.06, -0.14], size: [0.22, 0.02, 0.14], color: COLORS.metalDark },
+    { pool: 'box', pos: [0, top + 0.06, -0.16], size: [0.05, 0.14, 0.04], color: COLORS.metalDark },
+    { pool: 'box', pos: [0, top + 0.18, -0.15], size: [0.52, 0.34, 0.06], color: 0x2a2d36 },
+    { pool: 'screen', pos: [0, top + 0.21, -0.118], size: [0.46, 0.28, 0.01], color: 0x1c2333 },
+    // Keyboard and mouse.
+    { pool: 'box', pos: [0, top + 0.06, 0.12], size: [0.36, 0.02, 0.12], color: 0xd8dde2 },
+    { pool: 'box', pos: [0.26, top + 0.06, 0.13], size: [0.05, 0.025, 0.08], color: 0xd8dde2 },
+  ];
+  // A little clutter: a mug or a stack of papers.
+  if (seed % 3 === 0)
+    parts.push({
+      pool: 'cyl',
+      pos: [-w / 2 + 0.2, top + 0.06, 0.1],
+      size: [0.08, 0.1, 0.08],
+      color: [COLORS.red, COLORS.blue, 0xffd23f][seed % 3]!,
+    });
+  else if (seed % 3 === 1)
+    parts.push({
+      pool: 'box',
+      pos: [-w / 2 + 0.22, top + 0.06, 0.05],
+      size: [0.2, 0.05, 0.26],
+      color: COLORS.white,
+    });
+  return parts;
+}
+
+/** Office chair, seat at 0.4, backrest on the +z side (user faces −z). */
+export function chair(color: number): Part[] {
+  return [
+    { pool: 'cyl', pos: [0, 0, 0], size: [0.4, 0.04, 0.4], color: COLORS.metalDark },
+    { pool: 'cyl', pos: [0, 0.04, 0], size: [0.05, 0.3, 0.05], color: COLORS.metalDark },
+    { pool: 'box', pos: [0, 0.33, 0], size: [0.42, 0.07, 0.42], color },
+    { pool: 'box', pos: [0, 0.4, 0.2], size: [0.4, 0.26, 0.06], color },
+  ];
+}
+
 /** Move/rotate a prop's parts into an owner's local space. */
 export function placed(parts: Part[], x: number, z: number, rotY = 0, y = 0): Part[] {
   const c = Math.cos(rotY);

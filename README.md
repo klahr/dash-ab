@@ -16,8 +16,8 @@ An isometric three.js view of a Dash workspace: orgs, projects, runners and thei
   it pushes `delta`s. It talks to Dash through the `DashSource` interface (`bridge/src/source.ts`):
   `McpSource` polls the Dash MCP server, `MockSource` runs a simulator. See [Bridge](#bridge).
 - **`client/`** – Vite + TypeScript app rendering the office as an isometric three.js scene (see
-  below). Uses the `mockSnapshot()` fixture from `shared/` by default; open with `?live` to use
-  bridge snapshots instead.
+  below). Connects to the bridge by default; open with `?fixture` to use the static
+  `mockSnapshot()` fixture from `shared/` instead.
 
 The browser never talks to MCP directly; the bridge is the only process holding Dash credentials.
 
@@ -31,11 +31,26 @@ The browser never talks to MCP directly; the bridge is the only process holding 
     about seven draw calls in total, however many rooms there are.
   - `room.ts`, `props.ts`, `palette.ts`, `textures.ts`: procedural rooms, low-poly props and
     canvas textures (tiles, grass, name plaques). There are no external assets.
+- Desks and workers (`world/desks.ts`, `worker-fsm.ts`, `character.ts`, `worker.ts`,
+  `effects.ts`): each room has one desk with a computer and one worker per runner slot. Workers
+  are procedural low-poly people (colours, hair, glasses, names seeded from runner id and slot).
+  `WorkerBrain` is a pure state machine: `idle` (wandering, at the water cooler, chatting) →
+  `toDesk` → `sittingDown` → `typing` (monitor glows, speech bubble with task title and project)
+  → `gettingUp` when the slot frees up; `leaving` → `gone` when a slot is removed (new slots walk
+  in from the door). `syncSlot` maps slot changes onto it and reads the outcome from the task's
+  final status: a green tick with confetti for `review`/`merging`/`merged`, a red puff of smoke
+  for `failed`. Animation is procedural (walk cycle, bobbing, typing arms).
+- `store.ts` mirrors the bridge's world from `snapshot`/`delta` messages; `socket.ts`
+  (`BridgeConnection`) feeds it and reconnects with exponential backoff (0.5 s up to 10 s). The
+  scene is re-synced at most once per frame.
+- `worker-panel.ts`: clicking a worker opens an overlay with its task (title, project, status,
+  id, goals), or its last task and outcome when idle.
 - `camera.ts` (`IsoCameraRig`): orthographic isometric camera with pan, zoom to cursor and animated
   90° rotation. `input.ts` maps mouse and keys to it, and `panel.ts` is the HTML runner panel.
-- Controls: drag or WASD/arrows to pan, wheel or `+`/`-` to zoom, Q/E to rotate, click a room to
-  open its panel. With mock data, N adds a runner, X removes the last one and O toggles the
-  selected runner online/offline.
+- Controls: drag or WASD/arrows to pan, wheel or `+`/`-` to zoom, Q/E to rotate, click a room or
+  a worker to open its panel. With `?fixture`, N adds a runner, X removes the last one, O toggles
+  the selected runner online/offline, T starts a task on (or finishes one in) the selected room,
+  and Y / Shift+Y add or remove a slot.
 
 ## Scripts
 
@@ -48,6 +63,8 @@ The browser never talks to MCP directly; the bridge is the only process holding 
 | `npm test`          | Run vitest across all packages                      |
 | `npm run lint`      | ESLint + Prettier check                             |
 | `npm run typecheck` | `tsc -b` for all packages                           |
+
+Run `npm run dev:mock` and open http://localhost:5173 to watch the simulator drive the office.
 
 Config: `BRIDGE_PORT` (bridge, default 8787), `VITE_BRIDGE_URL` (client, default `ws://localhost:8787`).
 The bridge reads further settings from the environment or `bridge/.env`; see

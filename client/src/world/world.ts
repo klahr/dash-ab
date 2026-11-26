@@ -11,11 +11,13 @@ import {
   type GridExtent,
   type LayoutConfig,
 } from './layout.js';
+import { Effects } from './effects.js';
 import { COLORS } from './palette.js';
 import * as P from './props.js';
 import { PM_OFFICE, PmCharacter, PmOffice, inOffice } from './pm.js';
 import { Room } from './room.js';
 import { grassTexture } from './textures.js';
+import type { Worker } from './worker.js';
 
 /**
  * Scene side of the office. Feed it domain snapshots with `update()`; it adds,
@@ -36,6 +38,7 @@ export class World {
   private step = 0;
   private _extent: GridExtent;
   private state: WorldState | null = null;
+  readonly effects: Effects;
   private readonly office: PmOffice;
   readonly pm: PmCharacter;
   private lastT: number | null = null;
@@ -47,6 +50,7 @@ export class World {
   ) {
     this.root.name = 'world';
     this.kit = new Kit(this.root);
+    this.effects = new Effects(this.root);
     this._extent = gridExtent(0, cfg);
 
     const grass = grassTexture();
@@ -104,6 +108,28 @@ export class World {
     return this.state?.runners.find((r) => r.id === id);
   }
 
+  /** The worker for a runner's slot, if both exist. */
+  worker(runnerId: string, slot: number): Worker | undefined {
+    return this.rooms.get(runnerId)?.worker(slot);
+  }
+
+  /** The (non-leaving) worker hit by a ray, nearest first. */
+  workerAt(ray: THREE.Raycaster): Worker | null {
+    const targets: THREE.Object3D[] = [];
+    for (const room of this.rooms.values())
+      for (const w of room.slotWorkers) if (w.root.visible) targets.push(...w.pickables);
+    if (targets.length === 0) return null;
+    for (const hit of ray.intersectObjects(targets, true)) {
+      let o: THREE.Object3D | null = hit.object;
+      while (o && !o.userData.worker) o = o.parent;
+      if (o) return o.userData.worker as Worker;
+    }
+    return null;
+  }
+
+  private projectName = (id: string): string =>
+    this.state?.projects.find((p) => p.id === id)?.name ?? id;
+
   /** Reconcile the scene with a snapshot: add, update and remove rooms. */
   update(state: WorldState): void {
     this.state = state;
@@ -120,12 +146,21 @@ export class World {
     for (const runner of state.runners) {
       const existing = this.rooms.get(runner.id);
       if (existing) {
-        existing.update(runner);
+        existing.update(runner, state);
       } else {
         const rect = slotRect(assigned.get(runner.id)!, this.cfg);
         this.rooms.set(
           runner.id,
-          new Room(this.kit, this.root, runner.id, runner, rect, this.step),
+          new Room(
+            this.kit,
+            this.root,
+            runner.id,
+            runner,
+            rect,
+            this.step,
+            { effects: this.effects, projectName: this.projectName },
+            state,
+          ),
         );
       }
     }
@@ -165,10 +200,12 @@ export class World {
     if (room) this.selection.position.set(room.rect.x0, 0, room.rect.z0);
   }
 
-  /** Per-frame animation (selection pulse, PM). `t` in seconds. */
+  /** Per-frame animation (workers, effects, PM, selection pulse). `t` in seconds. */
   tick(t: number): void {
-    const dt = this.lastT === null ? 0 : Math.min(t - this.lastT, 0.1);
+    const dt = this.lastT === null ? 0 : Math.min(0.1, Math.max(0, t - this.lastT));
     this.lastT = t;
+    for (const room of this.rooms.values()) room.tick(dt);
+    this.effects.update(dt);
     this.pm.tick(dt);
     if (this.selection.visible) {
       this.selectionMat.emissive
@@ -225,6 +262,7 @@ export class World {
   dispose(): void {
     for (const r of this.rooms.values()) r.dispose();
     this.rooms.clear();
+    this.effects.dispose();
     this.pm.dispose();
     this.root.remove(this.pm.group);
     this.office.dispose();

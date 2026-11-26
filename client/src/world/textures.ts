@@ -5,9 +5,9 @@ import * as THREE from 'three';
  * Node) a blank texture is returned so scene building still works.
  */
 
-type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+export type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
-function makeCanvas(
+export function makeCanvas(
   w: number,
   h: number,
 ): { canvas: HTMLCanvasElement | OffscreenCanvas; ctx: Ctx } | null {
@@ -26,7 +26,22 @@ function makeCanvas(
   return null;
 }
 
-function toTexture(c: ReturnType<typeof makeCanvas>): THREE.Texture {
+/** `ctx.roundRect` with a fallback for browsers that lack it (Chrome < 99). */
+export function roundRect(ctx: Ctx, x: number, y: number, w: number, h: number, r: number): void {
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, w, h, r);
+    return;
+  }
+  r = Math.min(r, w / 2, h / 2);
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+export function toTexture(c: ReturnType<typeof makeCanvas>): THREE.Texture {
   if (!c) return new THREE.Texture();
   const tex = new THREE.CanvasTexture(c.canvas as HTMLCanvasElement);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -97,7 +112,7 @@ export function plaqueTexture(name: string, online: boolean): THREE.Texture {
     const r = 12;
     const plate = (inset: number, fill: string | CanvasGradient) => {
       ctx.beginPath();
-      ctx.roundRect(inset, inset, w - inset * 2, h - inset * 2, r - inset / 2);
+      roundRect(ctx, inset, inset, w - inset * 2, h - inset * 2, r - inset / 2);
       ctx.fillStyle = fill;
       ctx.fill();
     };
@@ -149,7 +164,7 @@ export function bubbleTexture(text: string): THREE.Texture {
     const { ctx } = c;
     const tail = 14;
     ctx.beginPath();
-    ctx.roundRect(4, 4, w - 8, h - tail - 8, 16);
+    roundRect(ctx, 4, 4, w - 8, h - tail - 8, 16);
     ctx.moveTo(w / 2 - 12, h - tail - 4);
     ctx.lineTo(w / 2, h - 3);
     ctx.lineTo(w / 2 + 12, h - tail - 4);
