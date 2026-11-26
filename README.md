@@ -40,6 +40,22 @@ The browser never talks to MCP directly; the bridge is the only process holding 
   in from the door). `syncSlot` maps slot changes onto it and reads the outcome from the task's
   final status: a green tick with confetti for `review`/`merging`/`merged`, a red puff of smoke
   for `failed`. Animation is procedural (walk cycle, bobbing, typing arms).
+- The north wing (`world/wing.ts` lays it out; each feature is its own module) sits in a row
+  north of the grid beside the PM's office, and is fed from the same store:
+  - `world/reception.ts`: the waiting room. One visitor per queued task (`planSeats` keeps seats
+    stable), an LED sign with the full count, and the walk from the bench to the runner's room
+    when Dash picks the task up.
+  - `world/review.ts`: the review office (inbox tray, outbox, trophy shelf, repair bin).
+  - `world/noticeboard.ts`: the goals board, drawn to a canvas texture; `goalProgress` is pure.
+  - `world/projects.ts`: project colours (`projectHex`/`projectCss`) and the lobby banners.
+    Workers wear a badge and armband in their task's project colour (`world/worker.ts`).
+  - `world/features.ts`: click targets. `World.pickFeature` and `World.featureAt` resolve a
+    click to `{ kind: 'queue' | 'review' | 'goals' | 'project', … }`.
+- `hud.ts` + `events.ts`: the bottom HUD bar. `EventLog` diffs snapshots into ticker events and
+  counts merges since local midnight. It uses the task's `updatedAt` when Dash reports one
+  (`merged_at`/`updated_at`/…) and otherwise counts only merges it saw happen.
+- `panels/`: details overlays. `overlay.ts` is the shell, and each feature has its own view
+  module (`queue-panel`, `review-panel`, `goals-panel`, `project-panel`, `activity-panel`).
 - `store.ts` mirrors the bridge's world from `snapshot`/`delta` messages; `socket.ts`
   (`BridgeConnection`) feeds it and reconnects with exponential backoff (0.5 s up to 10 s). The
   scene is re-synced at most once per frame.
@@ -48,9 +64,34 @@ The browser never talks to MCP directly; the bridge is the only process holding 
 - `camera.ts` (`IsoCameraRig`): orthographic isometric camera with pan, zoom to cursor and animated
   90° rotation. `input.ts` maps mouse and keys to it, and `panel.ts` is the HTML runner panel.
 - Controls: drag or WASD/arrows to pan, wheel or `+`/`-` to zoom, Q/E to rotate, click a room or
-  a worker to open its panel. With `?fixture`, N adds a runner, X removes the last one, O toggles
+  a worker to open its panel. Click anything in the legend below (or a HUD counter, or the
+  ticker) to open its overlay, and press Esc to close it. With `?fixture`, N adds a runner, X removes the last one, O toggles
   the selected runner online/offline, T starts a task on (or finishes one in) the selected room,
   and Y / Shift+Y add or remove a slot.
+
+### Legend
+
+| In the office                               | Means                                                                                                                                  | Click opens                        |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Room with a brass plaque                    | A runner. Lights out (grey, dim) when it is offline.                                                                                   | Runner panel                       |
+| Worker at a desk, speech bubble             | A slot working on a task. The bubble shows the title and project.                                                                      | Worker panel                       |
+| Badge and armband on a worker               | The colour of the project the worker's task belongs to.                                                                                | Worker panel                       |
+| Green tick and confetti / red puff of smoke | A task left a slot for review or merge / failed.                                                                                       | –                                  |
+| **Reception**: visitor on a bench           | A queued task (one visitor per task, shirt in the project colour). Up to 16 sit and the rest stand. The LED sign shows the full count. | Queue, with that task highlighted  |
+| Visitor walking out of reception            | Dash picked the task up. The visitor walks to the runner's room (or out of the door if the task left the queue some other way).        | Queue                              |
+| **Noticeboard** card in reception           | A goal: project stripe, title, progress bar (merged / linked tasks).                                                                   | That goal, or all goals            |
+| **Banner** on a brass pole in reception     | A project, in its colour. Furled grey when the HUD filter hides that project.                                                          | Project overview (+ filter button) |
+| **Review**: folders in the inbox tray       | Tasks in review, one coloured folder each (up to 12).                                                                                  | In review                          |
+| Folders in the outbox tray                  | Tasks merging.                                                                                                                         | Merging                            |
+| Gold cups on the trophy shelf               | Merged tasks Dash still lists, on project-coloured plinths (up to 18).                                                                 | Merged                             |
+| Crumpled paper in the red repair bin        | Failed tasks (up to 10).                                                                                                               | Repair                             |
+| Project manager                             | Org-wide chat.                                                                                                                         | Chat                               |
+
+The **HUD bar** at the bottom has counters (🏃 running = in progress or merging, 🪑 queued, 📂 in
+review, 🏆 merged today, 🔧 failed), a project filter, and a ticker of recent events. Each
+counter opens the matching overlay, and the ticker opens the event log. The filter narrows the
+counters, the ticker, the overlays, the visitors, the folders, the trophies and the noticeboard
+to one project.
 
 ## Scripts
 
@@ -107,14 +148,14 @@ role (or `missing — stubbed`). Roles can be pointed at other tool names with `
 
 ### What maps to what
 
-| Domain        | Dash MCP tool      | Notes                                                                                                                                                        |
-| ------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Project`     | `list_projects`    | Without it, projects come from `DASH_PROJECTS` (or one `default` project).                                                                                   |
-| `Task`        | `list_todos`       | Called once per project if it takes a `project`/`project_id` argument. Dash statuses map onto `TaskStatus` (`running`→`in_progress`, `stopped`→`failed`, …). |
-| `Goal`        | `list_goals`       | Per project, like tasks. `todo_ids`/`task_ids`/`todos` become `taskIds`.                                                                                     |
-| `Runner/Slot` | _none_ (see below) | Inferred from tasks' `runner_name`/`runner` (+ `slot`) fields.                                                                                               |
-| `ChatMessage` | _none_ (see below) | Relayed to a chat tool if one is configured.                                                                                                                 |
-| `Org`         | _none_             | Name from `DASH_ORG_NAME`.                                                                                                                                   |
+| Domain        | Dash MCP tool      | Notes                                                                                                                                                                                                                             |
+| ------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Project`     | `list_projects`    | Without it, projects come from `DASH_PROJECTS` (or one `default` project).                                                                                                                                                        |
+| `Task`        | `list_todos`       | Called once per project if it takes a `project`/`project_id` argument. Dash statuses map onto `TaskStatus` (`running`→`in_progress`, `stopped`→`failed`, …). `merged_at`/`finished_at`/`completed_at`/`updated_at` → `updatedAt`. |
+| `Goal`        | `list_goals`       | Per project, like tasks. `todo_ids`/`task_ids`/`todos` become `taskIds`.                                                                                                                                                          |
+| `Runner/Slot` | _none_ (see below) | Inferred from tasks' `runner_name`/`runner` (+ `slot`) fields.                                                                                                                                                                    |
+| `ChatMessage` | _none_ (see below) | Relayed to a chat tool if one is configured.                                                                                                                                                                                      |
+| `Org`         | _none_             | Name from `DASH_ORG_NAME`.                                                                                                                                                                                                        |
 
 Results are read from `structuredContent` or from JSON in the text content. Field names are matched
 leniently (`id`/`todo_id`, `title`/`name`/first line of `prompt`, …) because Dash publishes no
@@ -150,8 +191,9 @@ without a Dash server. It is also used automatically when neither `DASH_MCP_URL`
 `DASH_MCP_COMMAND` is set (`MOCK=0` turns that off).
 
 - Two projects, one goal each, and four runners with 1, 2, 4 and 3 slots.
-- Tasks are created `queued`, picked up by free slots (`in_progress`), then go to `review` and
-  `merged`; about 1 in 8 fails while running and a few fail in review. Finished tasks are removed
+- Tasks are created `queued` (the simulator keeps up to 8 waiting and picks them up slowly, so
+  reception has visitors), picked up by free slots (`in_progress`), then go to `review` and
+  `merged`, with an `updatedAt` stamp on each change; about 1 in 8 fails while running and a few fail in review. Finished tasks are removed
   after a while. Runner `delta` occasionally goes offline, failing its running tasks.
 - A canned project manager answers chat: try "status", "how are the runners?", "what failed?".
 - `MOCK_TICK_MS` sets the simulation speed (default 1500 ms).

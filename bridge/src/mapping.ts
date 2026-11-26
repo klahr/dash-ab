@@ -162,6 +162,30 @@ function firstLine(s: string, max = 80): string {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
+/**
+ * Epoch milliseconds from an ISO date string or a number (values below 1e12
+ * are taken to be seconds).
+ */
+export function parseTime(v: unknown): number | undefined {
+  if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v < 1e12 ? v * 1000 : v;
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v);
+    if (Number.isFinite(n)) return parseTime(n);
+    const t = Date.parse(v);
+    return Number.isNaN(t) ? undefined : t;
+  }
+  return undefined;
+}
+
+const TIME_KEYS = [
+  'merged_at',
+  'finished_at',
+  'completed_at',
+  'updated_at',
+  'updatedAt',
+  'modified_at',
+] as const;
+
 export function mapTask(raw: Raw, fallbackProject: string): MappedTask | null {
   const id = pick(raw, 'id', 'todo_id', 'task_id');
   if (!id) return null;
@@ -173,7 +197,15 @@ export function mapTask(raw: Raw, fallbackProject: string): MappedTask | null {
   const slotRaw = raw.slot ?? raw.slot_index ?? raw.slotIndex;
   const slot =
     typeof slotRaw === 'number' && Number.isInteger(slotRaw) && slotRaw >= 0 ? slotRaw : undefined;
-  return { task: { id, title, project, status }, runner, slot };
+  const task: Task = { id, title, project, status };
+  for (const k of TIME_KEYS) {
+    const t = parseTime(raw[k]);
+    if (t !== undefined) {
+      task.updatedAt = t;
+      break;
+    }
+  }
+  return { task, runner, slot };
 }
 
 function idList(v: unknown): string[] {

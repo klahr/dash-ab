@@ -35,7 +35,8 @@
         font-weight: bold;
       }
       #help {
-        bottom: 10px;
+        top: 48px;
+        max-width: calc(100% - 340px);
         font-size: 12px;
       }
       #help kbd {
@@ -54,7 +55,7 @@
         top: 10px;
         right: 10px;
         width: 290px;
-        max-height: calc(100% - 20px);
+        max-height: calc(100% - 100px);
         overflow: auto;
         color: #2a2a2a;
         background: linear-gradient(#fdf3d4, #f4e2b0);
@@ -216,9 +217,8 @@
       }
 
       #ask-pm {
-        right: 10px;
-        bottom: 10px;
-        left: auto;
+        position: static;
+        flex: none;
         font:
           bold 14px 'Trebuchet MS',
           Verdana,
@@ -244,11 +244,11 @@
       .chat-panel {
         position: fixed;
         right: 10px;
-        bottom: 56px;
+        bottom: 86px;
         display: flex;
         flex-direction: column;
         width: 360px;
-        height: min(480px, calc(100% - 76px));
+        height: min(480px, calc(100% - 106px));
         color: #2a2a2a;
         background: linear-gradient(#fdf3d4, #f4e2b0);
         border: 4px solid #2b4a8b;
@@ -466,6 +466,346 @@
         border-color: #5a5e66;
         cursor: default;
       }
+
+      /* Bottom HUD bar (Theme Hospital style). */
+      .hud-bar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 70px;
+        padding: 0 10px;
+        box-sizing: border-box;
+        color: #fff8e0;
+        background: linear-gradient(#3a60b3, #2b4a8b 45%, #1f3a70);
+        border-top: 4px solid #f2b632;
+        box-shadow: 0 -3px 0 #1a2e5a inset;
+        text-shadow: 1px 1px 0 #1a2e5a;
+      }
+      .hud-bar .counters {
+        display: flex;
+        gap: 6px;
+      }
+      .hud-bar .counter {
+        display: grid;
+        grid-template: 'icon value' 26px 'label label' 16px / auto 1fr;
+        align-items: center;
+        min-width: 86px;
+        padding: 4px 8px;
+        color: #ffe58a;
+        background: linear-gradient(#1a2e5a, #23407a);
+        border: 2px solid #0f1d3d;
+        border-top-color: #0b1530;
+        border-bottom-color: #5a7cc4;
+        border-radius: 6px;
+        box-shadow: 0 0 0 2px #c98a1a;
+        font-family: inherit;
+        cursor: pointer;
+      }
+      .hud-bar .counter:hover {
+        background: linear-gradient(#23407a, #2f56a3);
+      }
+      .hud-bar .counter .icon {
+        grid-area: icon;
+        font-size: 18px;
+      }
+      .hud-bar .counter .value {
+        grid-area: value;
+        text-align: right;
+        font:
+          bold 22px 'Courier New',
+          monospace;
+        color: #ffb000;
+        text-shadow: 0 0 6px rgba(255, 176, 0, 0.6);
+      }
+      .hud-bar .counter.failed .value {
+        color: #ff6b5a;
+        text-shadow: 0 0 6px rgba(255, 80, 60, 0.6);
+      }
+      .hud-bar .counter.mergedToday .value {
+        color: #7dff9a;
+        text-shadow: 0 0 6px rgba(90, 255, 140, 0.5);
+      }
+      .hud-bar .counter .label {
+        grid-area: label;
+        font-size: 10px;
+        font-weight: bold;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        color: #fff8e0;
+        white-space: nowrap;
+      }
+      .hud-bar .counter.bump .value {
+        animation: hud-bump 0.45s ease-out;
+      }
+      @keyframes hud-bump {
+        30% {
+          transform: scale(1.35);
+        }
+      }
+      .hud-bar .filter {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-size: 10px;
+        font-weight: bold;
+        text-transform: uppercase;
+      }
+      .hud-bar select {
+        max-width: 150px;
+        padding: 3px 4px;
+        font:
+          bold 12px 'Trebuchet MS',
+          Verdana,
+          sans-serif;
+        color: #2a2a2a;
+        background: #fdf3d4;
+        border: 2px solid #c98a1a;
+        border-radius: 4px;
+      }
+      .hud-bar .ticker {
+        flex: 1;
+        min-width: 0;
+        height: 40px;
+        box-sizing: border-box;
+        overflow: hidden;
+        padding: 0 10px;
+        line-height: 36px;
+        text-align: left;
+        color: #9ff7a0;
+        background: #0b1220;
+        border: 2px solid #0f1d3d;
+        border-bottom-color: #5a7cc4;
+        border-radius: 6px;
+        font:
+          bold 14px 'Courier New',
+          monospace;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        text-shadow: 0 0 5px rgba(120, 255, 140, 0.45);
+        cursor: pointer;
+      }
+      .hud-bar .ticker:hover {
+        border-color: #f2b632;
+      }
+      .hud-bar .ticker-text {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .hud-bar .ticker-text.slide {
+        animation: ticker-in 0.35s ease-out;
+      }
+      @keyframes ticker-in {
+        from {
+          opacity: 0.3;
+          transform: translateX(24px);
+        }
+      }
+      @media (max-width: 900px) {
+        .hud-bar .counter .label {
+          display: none;
+        }
+        .hud-bar .counter {
+          min-width: 0;
+          grid-template: 'icon value' 26px / auto 1fr;
+        }
+      }
+
+      /* Feature overlays (reception, review, goals, projects, events). */
+      .feature-panel {
+        width: 330px;
+      }
+      .feature-panel .feature-body {
+        padding: 4px 0 8px;
+      }
+      .feature-panel .summary {
+        margin: 6px 12px;
+      }
+      .feature-panel h3.section {
+        margin: 12px 12px 0;
+        font-size: 14px;
+        text-transform: uppercase;
+        color: #2b4a8b;
+      }
+      .feature-panel .empty {
+        margin: 8px 12px;
+        font-size: 13px;
+        font-style: italic;
+        color: #6b6050;
+      }
+      .feature-panel .task-list,
+      .feature-panel .goal-cards,
+      .feature-panel .goal-links,
+      .feature-panel .event-log {
+        list-style: none;
+        margin: 0;
+        padding: 4px 10px 6px;
+      }
+      .feature-panel .task-row {
+        margin-bottom: 6px;
+        padding: 6px 8px;
+        background: #fffaf0;
+        border: 2px solid #d8c48a;
+        border-left-width: 7px;
+        border-radius: 6px;
+      }
+      .feature-panel .task-row.focus {
+        background: #fff3b0;
+        box-shadow: 0 0 0 2px #ffb000;
+      }
+      .feature-panel .task-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        margin-top: 4px;
+      }
+      .feature-panel .where {
+        font-size: 11px;
+        font-weight: bold;
+        color: #2b4a8b;
+      }
+      .feature-panel .task-goals {
+        margin-top: 4px;
+        font-size: 11px;
+      }
+      .feature-panel .task-id {
+        margin-top: 3px;
+        font-size: 10px;
+      }
+      .feature-panel .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 8px 10px 0;
+      }
+      .feature-panel .tab {
+        padding: 3px 8px;
+        font:
+          bold 11px 'Trebuchet MS',
+          Verdana,
+          sans-serif;
+        color: #3b2405;
+        background: #efe3bd;
+        border: 2px solid #d8c48a;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      .feature-panel .tab.active {
+        color: #fff;
+        background: #2b4a8b;
+        border-color: #1a2e5a;
+      }
+      .feature-panel .link,
+      .feature-panel .goal-title {
+        padding: 0;
+        font: inherit;
+        color: #1f5fbf;
+        text-align: left;
+        background: none;
+        border: none;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      .feature-panel > .feature-body > .link {
+        margin: 6px 12px 0;
+      }
+      .feature-panel .goal-card {
+        margin-bottom: 8px;
+        padding: 8px 10px;
+        background: #fff7c2;
+        border: 2px solid #d8c48a;
+        border-top-width: 8px;
+        border-radius: 4px;
+        box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.15);
+      }
+      .feature-panel .goal-title {
+        font-size: 14px;
+        font-weight: bold;
+        color: #2a2a2a;
+      }
+      .feature-panel .progress {
+        margin: 6px 12px;
+      }
+      .feature-panel .goal-card .progress {
+        margin: 6px 0 0;
+      }
+      .feature-panel .bar {
+        height: 10px;
+        overflow: hidden;
+        background: #d8c48a;
+        border-radius: 5px;
+      }
+      .feature-panel .fill {
+        height: 100%;
+        background: #3fbf6a;
+      }
+      .feature-panel .progress-label {
+        font-size: 11px;
+        color: #6b6050;
+      }
+      .feature-panel .feature-body > .task-meta {
+        margin: 8px 12px 0;
+      }
+      .feature-panel .swatch {
+        margin: 10px 12px 6px;
+        padding: 8px 10px;
+        font-size: 12px;
+        font-weight: bold;
+        color: #fff;
+        border-radius: 6px;
+        text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+      }
+      .feature-panel .status-counts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin: 0 12px;
+      }
+      .feature-panel .action {
+        margin: 10px 12px 0;
+        padding: 5px 10px;
+        font:
+          bold 12px 'Trebuchet MS',
+          Verdana,
+          sans-serif;
+        color: #fff;
+        background: #3fae3a;
+        border: 2px solid #1f6b1c;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .feature-panel .filter-note {
+        margin: 8px 12px 0;
+        padding: 4px 8px;
+        font-size: 12px;
+        background: #fde4d0;
+        border-radius: 4px;
+      }
+      .feature-panel .event {
+        display: grid;
+        grid-template-columns: 22px 62px 1fr;
+        gap: 4px;
+        padding: 4px 0;
+        font-size: 12px;
+        border-bottom: 1px dashed #d8c48a;
+      }
+      .feature-panel .event time {
+        font: 11px monospace;
+        color: #8a7a5a;
+      }
+      .feature-panel .event.failed .text,
+      .feature-panel .event.offline .text {
+        color: #b02a2a;
+      }
+      .feature-panel .event.merged .text {
+        color: #2c8a4c;
+      }
     </style>
   </head>
   <body>
@@ -473,12 +813,15 @@
     <div id="status" class="hud">loading…</div>
     <div id="help" class="hud">
       Drag/<kbd>WASD</kbd> pan · wheel zoom · <kbd>Q</kbd><kbd>E</kbd> rotate · click a room, a
-      worker or the PM · <kbd>C</kbd> chat · <code>?fixture</code>: <kbd>N</kbd> add
-      <kbd>X</kbd> remove <kbd>O</kbd> online <kbd>T</kbd> task <kbd>Y</kbd>/<kbd>⇧Y</kbd> slots
+      worker, the PM, a visitor, the noticeboard, a banner or a review tray · <kbd>C</kbd> chat ·
+      <kbd>Esc</kbd> close · <code>?fixture</code>: <kbd>N</kbd> add <kbd>X</kbd> remove
+      <kbd>O</kbd> online <kbd>T</kbd> task <kbd>Y</kbd>/<kbd>⇧Y</kbd> slots
     </div>
-    <button id="ask-pm" class="hud" type="button" title="Talk to the project manager">
-      💬 Ask the PM <kbd>C</kbd>
-    </button>
+    <div id="hud-bar">
+      <button id="ask-pm" class="hud" type="button" title="Talk to the project manager">
+        💬 Ask the PM <kbd>C</kbd>
+      </button>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

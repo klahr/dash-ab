@@ -15,7 +15,13 @@ import { Effects } from './effects.js';
 import { COLORS } from './palette.js';
 import * as P from './props.js';
 import { PM_OFFICE, PmCharacter, PmOffice, inOffice } from './pm.js';
+import { featureFromHit, type FeatureTarget } from './features.js';
+import { Noticeboard } from './noticeboard.js';
+import { ProjectBanners } from './projects.js';
+import { BANNER_SPOT, MAX_BANNERS, NOTICEBOARD_SPOT, Reception } from './reception.js';
+import { ReviewOffice } from './review.js';
 import { Room } from './room.js';
+import { LOBBY, REVIEW_OFFICE } from './wing.js';
 import { grassTexture } from './textures.js';
 import type { Worker } from './worker.js';
 
@@ -43,6 +49,11 @@ export class World {
   readonly pm: PmCharacter;
   private lastT: number | null = null;
   private readonly raycaster = new THREE.Raycaster();
+  readonly reception: Reception;
+  readonly review: ReviewOffice;
+  readonly noticeboard: Noticeboard;
+  readonly banners: ProjectBanners;
+  private filter: string | null = null;
 
   constructor(
     private readonly cfg: LayoutConfig = DEFAULT_LAYOUT,
@@ -72,6 +83,19 @@ export class World {
     this.office = new PmOffice(this.kit, this.root, this.step);
     this.pm = new PmCharacter(rng);
     this.root.add(this.pm.group);
+
+    this.reception = new Reception(this.kit, this.root, this.step);
+    this.review = new ReviewOffice(this.kit, this.root, this.step);
+    this.noticeboard = new Noticeboard();
+    this.noticeboard.group.position.set(
+      LOBBY.x0 + NOTICEBOARD_SPOT[0],
+      0,
+      LOBBY.z0 + NOTICEBOARD_SPOT[1],
+    );
+    this.root.add(this.noticeboard.group);
+    this.banners = new ProjectBanners(MAX_BANNERS);
+    this.banners.group.position.set(LOBBY.x0 + BANNER_SPOT[0], 0, LOBBY.z0 + BANNER_SPOT[1]);
+    this.root.add(this.banners.group);
   }
 
   get extent(): GridExtent {
@@ -132,6 +156,7 @@ export class World {
 
   /** Reconcile the scene with a snapshot: add, update and remove rooms. */
   update(state: WorldState): void {
+    const initial = this.state === null;
     this.state = state;
     const ids = state.runners.map((r) => r.id);
     const assigned = this.slots.assign(ids);
@@ -166,6 +191,63 @@ export class World {
     }
     this.rebuildCorridors();
     this.pm.rooms = [...this.rooms.values()].map((r) => r.rect);
+    this.syncFeatures(initial);
+  }
+
+  /** Reception, review office, noticeboard and banners follow the snapshot and filter. */
+  private syncFeatures(initial: boolean): void {
+    const state = this.state;
+    if (!state) return;
+    this.reception.sync({
+      state,
+      filter: this.filter,
+      roomOf: (id) => this.rooms.get(id)?.rect,
+      initial,
+    });
+    this.review.sync(state, this.filter);
+    this.noticeboard.update(state, this.filter);
+    this.banners.update(state.projects, this.filter);
+  }
+
+  /** HUD project filter (null = all projects). */
+  get projectFilter(): string | null {
+    return this.filter;
+  }
+
+  setProjectFilter(id: string | null): void {
+    if (id === this.filter) return;
+    this.filter = id;
+    this.syncFeatures(false);
+  }
+
+  /**
+   * The Dash feature under the pointer: a visitor, the queue sign, a review
+   * station, a noticeboard card or a project banner (nearest wins).
+   */
+  pickFeature(ndc: THREE.Vector2, camera: THREE.Camera): FeatureTarget | null {
+    this.raycaster.setFromCamera(ndc, camera);
+    const targets = [
+      ...this.reception.pickables,
+      ...this.review.pickables,
+      ...this.noticeboard.pickables,
+      this.banners.group,
+    ];
+    for (const hit of this.raycaster.intersectObjects(targets, true)) {
+      const f = featureFromHit(hit);
+      if (f) return f;
+    }
+    for (const hit of this.raycaster.intersectObjects(this.reception.fallbackPickables, true)) {
+      const f = featureFromHit(hit);
+      if (f) return f;
+    }
+    return null;
+  }
+
+  /** Feature for a ground point inside the lobby or the review office. */
+  featureAt(x: number, z: number): FeatureTarget | null {
+    if (this.reception.building.contains(x, z)) return { kind: 'queue' };
+    if (this.review.building.contains(x, z)) return { kind: 'review' };
+    return null;
   }
 
   /** Rotation step (0..3, any integer accepted) the camera is viewing from. */
@@ -173,6 +255,8 @@ export class World {
     this.step = ((step % 4) + 4) % 4;
     for (const room of this.rooms.values()) room.setViewRotation(this.step);
     this.office.setViewRotation(this.step);
+    this.reception.setViewRotation(this.step);
+    this.review.setViewRotation(this.step);
     this.pm.setViewAngle(viewAngle(this.step));
   }
 
@@ -207,6 +291,9 @@ export class World {
     for (const room of this.rooms.values()) room.tick(dt);
     this.effects.update(dt);
     this.pm.tick(dt);
+    this.reception.tick(dt);
+    this.review.tick(dt);
+    this.banners.tick(dt);
     if (this.selection.visible) {
       this.selectionMat.emissive
         .setHex(COLORS.selection)
@@ -266,6 +353,10 @@ export class World {
     this.pm.dispose();
     this.root.remove(this.pm.group);
     this.office.dispose();
+    this.reception.dispose();
+    this.review.dispose();
+    this.noticeboard.dispose();
+    this.banners.dispose();
     this.kit.dispose();
     this.ground.geometry.dispose();
     this.ground.material.map?.dispose();
@@ -297,13 +388,16 @@ export function corridorParts(ext: GridExtent, occupied: Set<number>, cfg: Layou
   // Kerb around the building.
   const k = 0.25;
   const kc = 0xb8b2a2;
-  // The north kerb is split around the project manager's office.
-  const gx0 = PM_OFFICE.x0;
-  const gx1 = PM_OFFICE.x0 + PM_OFFICE.w;
-  for (const [a, b] of [
-    [-k, gx0],
-    [gx1, ext.width + k],
-  ] as const) {
+  // The north kerb is split around the north wing (PM office, reception, review).
+  const wing = [PM_OFFICE, LOBBY, REVIEW_OFFICE].sort((a, b) => a.x0 - b.x0);
+  const gaps: [number, number][] = [];
+  let from = -k;
+  for (const r of wing) {
+    if (r.x0 > from) gaps.push([from, r.x0]);
+    from = Math.max(from, r.x0 + r.w);
+  }
+  if (ext.width + k > from) gaps.push([from, ext.width + k]);
+  for (const [a, b] of gaps) {
     parts.push({
       pool: 'box',
       pos: [(a + b) / 2, -0.12, -k / 2],

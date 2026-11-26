@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { projectCss } from './projects.js';
 import { makeCanvas, roundRect, toTexture } from './textures.js';
 import type { Outcome } from './worker-fsm.js';
 
@@ -11,12 +12,8 @@ import type { Outcome } from './worker-fsm.js';
 export const BUBBLE_W = 512;
 export const BUBBLE_H = 150;
 
-/** Stable, cheerful colour per project id. */
-export function projectColor(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return `hsl(${h % 360}, 70%, 42%)`;
-}
+/** Stable, cheerful colour per project id (see `projects.ts`). */
+export const projectColor = projectCss;
 
 function ellipsize(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,

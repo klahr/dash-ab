@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Task } from '@dash-iso/shared';
 import {
+  HIP_Y,
   buildCharacter,
   lookFor,
   poseCharacter,
@@ -8,9 +9,11 @@ import {
   type Look,
 } from './character.js';
 import { BUBBLE_H, BUBBLE_W, bubbleTexture } from './effects.js';
+import { projectHex } from './projects.js';
 import { WorkerBrain, type BrainOptions, type WorkerSite } from './worker-fsm.js';
 
 const BUBBLE_WIDTH = 2.2;
+const BADGE_GEO = new THREE.BoxGeometry(1, 1, 1);
 
 /**
  * One slot's worker in the scene: a `WorkerBrain` driving a procedural
@@ -22,6 +25,10 @@ export class Worker {
   readonly rig: CharacterRig;
   readonly root: THREE.Group;
   private bubble: THREE.Sprite | null = null;
+  /** Project-coloured lanyard badge and armband, shown while on a task. */
+  private readonly badge: THREE.Group;
+  private readonly badgeMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  private badgeProject: string | null = null;
   private bubbleKey = '';
   private walkPhase = 0;
   private t = Math.random() * 10;
@@ -38,6 +45,7 @@ export class Worker {
     this.root = this.rig.root;
     this.root.name = `worker-${runnerId}-${slotIndex}`;
     this.root.userData.worker = this;
+    this.badge = this.buildBadge();
     this.sync(0);
   }
 
@@ -47,6 +55,37 @@ export class Worker {
 
   get name(): string {
     return this.look.name;
+  }
+
+  private buildBadge(): THREE.Group {
+    const g = new THREE.Group();
+    g.name = 'project-badge';
+    const tw = 0.34 * this.look.build;
+    const card = new THREE.Mesh(BADGE_GEO, this.badgeMat);
+    card.scale.set(0.1, 0.12, 0.02);
+    card.position.set(tw * 0.22, HIP_Y + 0.24, 0.12);
+    const band = new THREE.Mesh(BADGE_GEO, this.badgeMat);
+    band.scale.set(0.115, 0.06, 0.135);
+    band.position.set(0, -0.1, 0);
+    this.rig.armL.add(band);
+    g.add(card);
+    this.rig.body.add(g);
+    g.userData.band = band;
+    return g;
+  }
+
+  /** Project id shown on the badge, or null when not on a task. */
+  get badgeProjectId(): string | null {
+    return this.badge.visible ? this.badgeProject : null;
+  }
+
+  private updateBadge(task: Task | null): void {
+    const band = this.badge.userData.band as THREE.Mesh;
+    const project = task?.project ?? null;
+    this.badge.visible = band.visible = project !== null;
+    if (project === null || project === this.badgeProject) return;
+    this.badgeProject = project;
+    this.badgeMat.color.setHex(projectHex(project));
   }
 
   /** Bubble stagger so neighbouring desks' bubbles don't overlap. */
@@ -88,6 +127,7 @@ export class Worker {
       poseCharacter(this.rig, { kind: 'stand', t: this.t });
     }
 
+    this.updateBadge(b.busy ? b.task : null);
     const showBubble = b.busy && (b.mode === 'typing' || b.mode === 'sittingDown');
     this.updateBubble(showBubble ? b.task : null, showBubble);
     if (this.bubble) {
@@ -144,6 +184,7 @@ export class Worker {
 
   dispose(): void {
     this.root.parent?.remove(this.root);
+    this.badgeMat.dispose();
     if (this.bubble) {
       this.bubble.material.map?.dispose();
       this.bubble.material.dispose();

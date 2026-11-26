@@ -28,6 +28,11 @@ export interface Task {
   /** Project id. */
   project: string;
   status: TaskStatus;
+  /**
+   * When the task last changed status (epoch ms), if Dash reports it. The
+   * client uses it to count "merged today".
+   */
+  updatedAt?: number;
 }
 
 export type SlotState = 'idle' | 'working';

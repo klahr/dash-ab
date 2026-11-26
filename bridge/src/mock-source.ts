@@ -19,6 +19,8 @@ interface SimTask {
   title: string;
   project: string;
   status: TaskStatus;
+  /** Epoch ms of the last status change. */
+  updatedAt: number;
   runner?: string;
   slot?: number;
   /** Ticks left in the current status. */
@@ -29,6 +31,8 @@ interface SimTask {
 
 export interface SimOptions {
   random?: () => number;
+  /** Wall clock for `updatedAt` (defaults to `Date.now`). */
+  now?: () => number;
   /** Probability per tick that a running task fails instead of reaching review. */
   failRate?: number;
   /** Max number of queued tasks to keep around. */
@@ -85,14 +89,16 @@ export class Simulator {
   }));
   private nextId = 1;
   private readonly rnd: () => number;
+  private readonly now: () => number;
   private readonly failRate: number;
   private readonly maxQueued: number;
   private readonly keepFinished: number;
 
   constructor(opts: SimOptions = {}) {
     this.rnd = opts.random ?? Math.random;
+    this.now = opts.now ?? Date.now;
     this.failRate = opts.failRate ?? 0.12;
-    this.maxQueued = opts.maxQueued ?? 4;
+    this.maxQueued = opts.maxQueued ?? 8;
     this.keepFinished = opts.keepFinishedTicks ?? 12;
     for (let i = 0; i < 5; i++) this.spawn();
   }
@@ -105,13 +111,21 @@ export class Simulator {
     const project = SIM_PROJECTS[this.between(0, SIM_PROJECTS.length - 1)]!;
     const id = `task-${this.nextId++}`;
     const title = TITLES[(this.nextId - 2) % TITLES.length]!;
-    this.tasks.push({ id, title, project: project.id, status: 'queued', ticks: 0 });
+    this.tasks.push({
+      id,
+      title,
+      project: project.id,
+      status: 'queued',
+      ticks: 0,
+      updatedAt: this.now(),
+    });
     const goal = this.goals.find((g) => g.project === project.id);
     if (goal && this.rnd() < 0.5) goal.taskIds = [...goal.taskIds, id];
   }
 
   private finish(t: SimTask, status: 'merged' | 'failed') {
     t.status = status;
+    t.updatedAt = this.now();
     t.runner = undefined;
     t.slot = undefined;
     t.finishedAt = this.tickCount;
@@ -134,6 +148,7 @@ export class Simulator {
           else
             Object.assign(t, {
               status: 'review',
+              updatedAt: this.now(),
               runner: undefined,
               slot: undefined,
               ticks: this.between(1, 3),
@@ -148,14 +163,22 @@ export class Simulator {
     for (const t of this.tasks.filter((x) => x.status === 'queued')) {
       const free = this.freeSlots();
       if (free.length === 0) break;
-      if (this.rnd() < 0.3) continue; // not every task starts the moment a slot frees up
+      // Not every task starts the moment a slot frees up, so reception has a queue.
+      if (this.rnd() < 0.7) continue;
       const [runner, slot] = free[this.between(0, free.length - 1)]!;
-      Object.assign(t, { status: 'in_progress', runner, slot, ticks: this.between(2, 6) });
+      Object.assign(t, {
+        status: 'in_progress',
+        updatedAt: this.now(),
+        runner,
+        slot,
+        ticks: this.between(2, 6),
+      });
     }
 
     // Keep the queue topped up and drop old finished tasks.
     const queued = this.tasks.filter((t) => t.status === 'queued').length;
     if (queued < this.maxQueued && this.rnd() < 0.6) this.spawn();
+    if (queued < this.maxQueued / 2 && this.rnd() < 0.5) this.spawn();
     const dropped = new Set(
       this.tasks
         .filter(
@@ -187,7 +210,13 @@ export class Simulator {
   /** Current world, built through the same mapping path as real Dash data. */
   world(): WorldState {
     const tasks: MappedTask[] = this.tasks.map((t) => ({
-      task: { id: t.id, title: t.title, project: t.project, status: t.status },
+      task: {
+        id: t.id,
+        title: t.title,
+        project: t.project,
+        status: t.status,
+        updatedAt: t.updatedAt,
+      },
       runner: t.runner,
       slot: t.slot,
     }));

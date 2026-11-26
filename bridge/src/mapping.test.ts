@@ -9,6 +9,7 @@ import {
   mapRunner,
   mapTask,
   mapTaskStatus,
+  parseTime,
   toolPayload,
   toolText,
   type MappedTask,
@@ -105,6 +106,20 @@ describe('entity mapping', () => {
     });
     expect(mapTask({ title: 'no id' }, 'px')).toBeNull();
     expect(mapTask({ id: 'x', slot: -1 }, 'px')?.slot).toBeUndefined();
+  });
+
+  it('reads when a task last changed', () => {
+    const iso = '2026-11-26T10:00:00Z';
+    const ms = Date.parse(iso);
+    expect(parseTime(iso)).toBe(ms);
+    expect(parseTime(ms / 1000)).toBe(ms);
+    expect(parseTime(String(ms))).toBe(ms);
+    expect(parseTime('soon')).toBeUndefined();
+    expect(mapTask({ id: 'x', updated_at: iso }, 'px')?.task.updatedAt).toBe(ms);
+    expect(
+      mapTask({ id: 'x', merged_at: iso, updated_at: '2026-11-27T00:00:00Z' }, 'px')?.task
+        .updatedAt,
+    ).toBe(ms);
   });
 
   it('maps goals with task id lists in different shapes', () => {

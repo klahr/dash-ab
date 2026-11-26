@@ -12,6 +12,10 @@ export function mockSnapshot(): WorldState {
     { id: 'task-4', title: 'Project manager character', project: 'proj-2', status: 'review' },
     { id: 'task-5', title: 'Fix flaky login test', project: 'proj-2', status: 'in_progress' },
     { id: 'task-6', title: 'HUD for queued tasks', project: 'proj-1', status: 'draft' },
+    { id: 'task-7', title: 'Bench seating for visitors', project: 'proj-2', status: 'queued' },
+    { id: 'task-8', title: 'Trophy shelf for merges', project: 'proj-1', status: 'merged' },
+    { id: 'task-9', title: 'Repair bin for failures', project: 'proj-2', status: 'failed' },
+    { id: 'task-10', title: 'Goals noticeboard', project: 'proj-1', status: 'review' },
   ];
   const t = (id: string): Task => ({ ...tasks.find((x) => x.id === id)! });
   const runner = (
@@ -44,6 +48,19 @@ export function mockSnapshot(): WorldState {
       runner('runner-gizmo', 'gizmo', true, [null, null]),
     ],
     tasks,
-    goals: [{ id: 'goal-1', project: 'proj-1', title: 'Ship the office', taskIds: ['task-1'] }],
+    goals: [
+      {
+        id: 'goal-1',
+        project: 'proj-1',
+        title: 'Ship the office',
+        taskIds: ['task-1', 'task-3', 'task-8', 'task-10'],
+      },
+      {
+        id: 'goal-2',
+        project: 'proj-2',
+        title: 'Stabilise the web app',
+        taskIds: ['task-4', 'task-5', 'task-9'],
+      },
+    ],
   };
 }

@@ -2,12 +2,21 @@ import * as THREE from 'three';
 import { mockSnapshot, type Task, type WorldState } from '@dash-iso/shared';
 import { IsoCameraRig } from './camera.js';
 import { ChatPanel } from './chat.js';
+import { EventLog } from './events.js';
+import { Hud, hudCounts, type CounterKind } from './hud.js';
 import { Controls } from './input.js';
+import { eventsView, mergedTodayView, runningView } from './panels/activity-panel.js';
+import { goalView, goalsView } from './panels/goals-panel.js';
+import { Overlay, type OverlayContext, type OverlayView } from './panels/overlay.js';
+import { projectView } from './panels/project-panel.js';
+import { queueView } from './panels/queue-panel.js';
+import { reviewView } from './panels/review-panel.js';
 import { RoomPanel } from './panel.js';
 import { aimSun, createScene } from './scene.js';
 import { BridgeConnection } from './socket.js';
 import { Store } from './store.js';
 import { WorkerPanel } from './worker-panel.js';
+import type { FeatureTarget } from './world/features.js';
 import { World } from './world/world.js';
 
 const app = document.getElementById('app')!;
@@ -24,6 +33,8 @@ scene.add(world.root);
 const rig = new IsoCameraRig(1);
 const panel = new RoomPanel(document.body, () => world.select(null));
 const workerPanel = new WorkerPanel(document.body, () => {});
+const overlay = new Overlay(document.body);
+const events = new EventLog();
 
 // Data source: the bridge by default (`npm run dev:mock` for the simulator);
 // `?fixture` uses the static mock fixture with dev keys instead.
@@ -45,15 +56,78 @@ window.addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement | null;
   if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
   if (e.code === 'KeyC' && !e.metaKey && !e.ctrlKey && !e.altKey) chat.toggle();
+  if (e.code === 'Escape') overlay.hide();
 });
 
 let state: WorldState = mockSnapshot();
+
+function overlayContext(): OverlayContext {
+  return {
+    state,
+    filter: world.projectFilter,
+    events,
+    open: openOverlay,
+    setFilter,
+  };
+}
+
+/** Show a feature overlay in place of the room/worker panels. */
+function openOverlay(view: OverlayView): void {
+  panel.hide();
+  workerPanel.hide();
+  world.select(null);
+  overlay.show(view, overlayContext());
+}
+
+function viewFor(target: FeatureTarget): OverlayView {
+  switch (target.kind) {
+    case 'queue':
+      return queueView(target.taskId);
+    case 'review':
+      return reviewView(target.section, target.taskId);
+    case 'goals':
+      return target.goalId ? goalView(target.goalId) : goalsView();
+    case 'project':
+      return projectView(target.id);
+  }
+}
+
+const COUNTER_VIEWS: Record<CounterKind, () => OverlayView> = {
+  running: runningView,
+  queued: () => queueView(),
+  review: () => reviewView('review'),
+  mergedToday: mergedTodayView,
+  failed: () => reviewView('failed'),
+};
+
+const hud = new Hud(document.getElementById('hud-bar')!, {
+  onCounter: (kind) => openOverlay(COUNTER_VIEWS[kind]()),
+  onFilter: (id) => setFilter(id),
+  onTicker: () => openOverlay(eventsView()),
+});
+
+function setFilter(id: string | null): void {
+  world.setProjectFilter(id);
+  refreshHud();
+  overlay.refresh(overlayContext());
+}
+
+function refreshHud(): void {
+  const f = world.projectFilter;
+  hud.setProjects(state.projects, f);
+  hud.setCounts(hudCounts(state, f, events.mergedToday(f)));
+  hud.setEvents(events.filtered(f));
+}
 let link = fixtureMode ? 'fixture data' : 'connecting…';
 let applied = -1;
 
 function applyState(next: WorldState): void {
   const first = world.roomCount === 0;
   state = next;
+  events.observe(state);
+  // A filter on a project that has gone away would hide everything.
+  if (world.projectFilter && !state.projects.some((p) => p.id === world.projectFilter))
+    world.setProjectFilter(null);
   world.update(state);
   const b = world.bounds;
   rig.setBounds(b.minX, b.minZ, b.maxX, b.maxZ);
@@ -61,6 +135,8 @@ function applyState(next: WorldState): void {
   panel.refresh(state);
   if (panel.shownId === null && world.selected) world.select(null);
   refreshWorkerPanel();
+  overlay.refresh(overlayContext());
+  refreshHud();
   updateStatus();
 }
 
@@ -96,6 +172,13 @@ const controls = new Controls(renderer.domElement, rig, {
       chat.open();
       return;
     }
+    const feature =
+      world.pickFeature(ndc, rig.camera) ?? (ground ? world.featureAt(ground.x, ground.z) : null);
+    if (feature) {
+      openOverlay(viewFor(feature));
+      return;
+    }
+    overlay.hide();
     const worker = pickWorker(ndc);
     if (worker) {
       world.select(worker.runnerId);
@@ -114,7 +197,10 @@ const controls = new Controls(renderer.domElement, rig, {
     const ground = rig.groundPoint(ndc);
     const overPm =
       world.pickPm(ndc, rig.camera) || (ground && world.pmOfficeAt(ground.x, ground.z));
-    renderer.domElement.style.cursor = overPm || pickWorker(ndc) || pick(ndc) ? 'pointer' : '';
+    const overFeature =
+      world.pickFeature(ndc, rig.camera) || (ground && world.featureAt(ground.x, ground.z));
+    renderer.domElement.style.cursor =
+      overPm || overFeature || pickWorker(ndc) || pick(ndc) ? 'pointer' : '';
   },
   onRotate: (step) => world.setViewRotation(step),
 });
