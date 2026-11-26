@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dash Isometric</title>
+    <style>
+      html,
+      body,
+      #app {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #1b1e27;
+      }
+      #status {
+        position: fixed;
+        top: 8px;
+        left: 8px;
+        color: #cfd3dc;
+        font: 12px monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="status">connecting…</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
