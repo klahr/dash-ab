@@ -1,38 +1,24 @@
 import * as THREE from 'three';
 
-/** Orthographic camera at the classic isometric angle looking at the origin. */
-export function createIsoCamera(aspect: number, viewSize = 10): THREE.OrthographicCamera {
-  const cam = new THREE.OrthographicCamera(
-    -viewSize * aspect,
-    viewSize * aspect,
-    viewSize,
-    -viewSize,
-    0.1,
-    100,
-  );
-  cam.position.set(10, 10, 10);
-  cam.lookAt(0, 0, 0);
-  return cam;
+export interface OfficeScene {
+  scene: THREE.Scene;
+  /** Key light; call `aimSun` each frame so shading stays consistent while rotating. */
+  sun: THREE.DirectionalLight;
 }
 
-export function createScene(): THREE.Scene {
+/** Scene with sky colour and cheerful flat lighting (no shadows, for speed). */
+export function createScene(): OfficeScene {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1b1e27);
-  scene.add(new THREE.GridHelper(20, 20, 0x4a5068, 0x2d3140));
-  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-  sun.position.set(5, 10, 3);
-  scene.add(sun);
+  scene.background = new THREE.Color(0x87c7e8);
+  scene.add(new THREE.HemisphereLight(0xfff6e0, 0x6c7fa6, 1.9));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+  scene.add(sun, sun.target);
+  return { scene, sun };
+}
 
-  const colors = [0x6aa9ff, 0x7be0a0, 0xffc66a];
-  colors.forEach((c, i) => {
-    const cube = new THREE.Mesh(
-      new THREE.BoxGeometry(1.5, 1.5, 1.5),
-      new THREE.MeshStandardMaterial({ color: c }),
-    );
-    cube.position.set((i - 1) * 3, 0.75, 0);
-    cube.name = `placeholder-${i}`;
-    scene.add(cube);
-  });
-  return scene;
+/** Keep the key light up and to the camera's left, relative to `target`. */
+export function aimSun(sun: THREE.DirectionalLight, target: THREE.Vector3, angle: number): void {
+  const a = angle + 0.7;
+  sun.position.set(target.x + Math.sin(a) * 20, 30, target.z + Math.cos(a) * 20);
+  sun.target.position.copy(target);
 }

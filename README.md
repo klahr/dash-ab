@@ -15,10 +15,27 @@ An isometric three.js view of a Dash workspace: orgs, projects, runners and thei
 - **`bridge/`** – Node WebSocket server and MCP client. On connect it sends a `snapshot`; afterwards
   it pushes `delta`s. It talks to Dash through the `DashSource` interface (`bridge/src/source.ts`):
   `McpSource` polls the Dash MCP server, `MockSource` runs a simulator. See [Bridge](#bridge).
-- **`client/`** – Vite + TypeScript app. Renders a placeholder scene with an orthographic isometric
-  camera and mirrors world state received from the bridge.
+- **`client/`** – Vite + TypeScript app rendering the office as an isometric three.js scene (see
+  below). Uses the `mockSnapshot()` fixture from `shared/` by default; open with `?live` to use
+  bridge snapshots instead.
 
 The browser never talks to MCP directly; the bridge is the only process holding Dash credentials.
+
+### Client scene
+
+- `client/src/world/` is scene building only, with no networking or UI. `World.update(state)` takes a
+  `WorldState` and adds, restyles or removes one room per runner. Rooms keep their grid slot
+  (`SlotAllocator`) as others come and go, and empty plots become small courtyards.
+  - `layout.ts`: pure grid maths, slot allocation and wall cut-away rules
+  - `instancing.ts`: growable `InstancedMesh` pools. Floor tiles, walls and every prop share
+    about seven draw calls in total, however many rooms there are.
+  - `room.ts`, `props.ts`, `palette.ts`, `textures.ts`: procedural rooms, low-poly props and
+    canvas textures (tiles, grass, name plaques). There are no external assets.
+- `camera.ts` (`IsoCameraRig`): orthographic isometric camera with pan, zoom to cursor and animated
+  90° rotation. `input.ts` maps mouse and keys to it, and `panel.ts` is the HTML runner panel.
+- Controls: drag or WASD/arrows to pan, wheel or `+`/`-` to zoom, Q/E to rotate, click a room to
+  open its panel. With mock data, N adds a runner, X removes the last one and O toggles the
+  selected runner online/offline.
 
 ## Scripts
 
