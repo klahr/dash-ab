@@ -5,17 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
+    "dev:mock": "MOCK=1 tsx watch src/main.ts",
     "start": "node dist/main.js",
     "build": "tsup"
   },
   "dependencies": {
     "@dash-iso/shared": "*",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.0",
     "tsup": "^8.3.0",
-    "tsx": "^4.19.0"
+    "tsx": "^4.19.0",
+    "zod": "^4.6.7"
   }
 }

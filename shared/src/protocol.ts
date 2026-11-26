@@ -1,4 +1,4 @@
-import type { ChatMessage, Goal, Project, Runner, Task, WorldState } from './domain.js';
+import type { ChatMessage, Goal, Org, Project, Runner, Task, WorldState } from './domain.js';
 
 /** Bridge -> client. */
 export type ServerMessage =
@@ -14,7 +14,11 @@ export type Delta =
   | { kind: 'task.upsert'; task: Task }
   | { kind: 'project.upsert'; project: Project }
   | { kind: 'goal.upsert'; goal: Goal }
-  | { kind: 'task.remove'; id: string };
+  | { kind: 'task.remove'; id: string }
+  | { kind: 'runner.remove'; id: string }
+  | { kind: 'project.remove'; id: string }
+  | { kind: 'goal.remove'; id: string }
+  | { kind: 'org.update'; org: Org };
 
 function upsert<T extends { id: string }>(list: T[], item: T): T[] {
   const i = list.findIndex((x) => x.id === item.id);
@@ -37,6 +41,14 @@ export function applyDelta(state: WorldState, delta: Delta): WorldState {
       return { ...state, goals: upsert(state.goals, delta.goal) };
     case 'task.remove':
       return { ...state, tasks: state.tasks.filter((t) => t.id !== delta.id) };
+    case 'runner.remove':
+      return { ...state, runners: state.runners.filter((r) => r.id !== delta.id) };
+    case 'project.remove':
+      return { ...state, projects: state.projects.filter((p) => p.id !== delta.id) };
+    case 'goal.remove':
+      return { ...state, goals: state.goals.filter((g) => g.id !== delta.id) };
+    case 'org.update':
+      return { ...state, org: delta.org };
   }
 }
 
