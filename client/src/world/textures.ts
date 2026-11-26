@@ -137,3 +137,37 @@ export function plaqueTexture(name: string, online: boolean): THREE.Texture {
   }
   return toTexture(c);
 }
+
+export const BUBBLE_ASPECT = 3;
+
+/** Comic speech bubble with a tail pointing down. */
+export function bubbleTexture(text: string): THREE.Texture {
+  const w = 288;
+  const h = w / BUBBLE_ASPECT;
+  const c = makeCanvas(w, h);
+  if (c) {
+    const { ctx } = c;
+    const tail = 14;
+    ctx.beginPath();
+    ctx.roundRect(4, 4, w - 8, h - tail - 8, 16);
+    ctx.moveTo(w / 2 - 12, h - tail - 4);
+    ctx.lineTo(w / 2, h - 3);
+    ctx.lineTo(w / 2 + 12, h - tail - 4);
+    ctx.fillStyle = '#fffdf2';
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#2b4a8b';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.fillStyle = '#2a2a2a';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    let px = 30;
+    do {
+      ctx.font = `bold ${px}px "Trebuchet MS", Verdana, sans-serif`;
+      px -= 2;
+    } while (px > 12 && ctx.measureText(text).width > w - 36);
+    ctx.fillText(text, w / 2, (h - tail) / 2 + 1);
+  }
+  return toTexture(c);
+}

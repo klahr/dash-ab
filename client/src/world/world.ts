@@ -7,11 +7,13 @@ import {
   gridExtent,
   rectContains,
   slotRect,
+  viewAngle,
   type GridExtent,
   type LayoutConfig,
 } from './layout.js';
 import { COLORS } from './palette.js';
 import * as P from './props.js';
+import { PM_OFFICE, PmCharacter, PmOffice, inOffice } from './pm.js';
 import { Room } from './room.js';
 import { grassTexture } from './textures.js';
 
@@ -34,8 +36,15 @@ export class World {
   private step = 0;
   private _extent: GridExtent;
   private state: WorldState | null = null;
+  private readonly office: PmOffice;
+  readonly pm: PmCharacter;
+  private lastT: number | null = null;
+  private readonly raycaster = new THREE.Raycaster();
 
-  constructor(private readonly cfg: LayoutConfig = DEFAULT_LAYOUT) {
+  constructor(
+    private readonly cfg: LayoutConfig = DEFAULT_LAYOUT,
+    rng: () => number = Math.random,
+  ) {
     this.root.name = 'world';
     this.kit = new Kit(this.root);
     this._extent = gridExtent(0, cfg);
@@ -55,10 +64,19 @@ export class World {
     this.root.add(this.selection);
 
     this.rebuildCorridors();
+
+    this.office = new PmOffice(this.kit, this.root, this.step);
+    this.pm = new PmCharacter(rng);
+    this.root.add(this.pm.group);
   }
 
   get extent(): GridExtent {
     return this._extent;
+  }
+
+  /** Ground rectangle covering the rooms and the PM's office (for camera bounds). */
+  get bounds(): { minX: number; minZ: number; maxX: number; maxZ: number } {
+    return { minX: 0, minZ: PM_OFFICE.z0 - 1, maxX: this._extent.width, maxZ: this._extent.depth };
   }
 
   /** Centre of the floor in world coordinates. */
@@ -112,18 +130,32 @@ export class World {
       }
     }
     this.rebuildCorridors();
+    this.pm.rooms = [...this.rooms.values()].map((r) => r.rect);
   }
 
   /** Rotation step (0..3, any integer accepted) the camera is viewing from. */
   setViewRotation(step: number): void {
     this.step = ((step % 4) + 4) % 4;
     for (const room of this.rooms.values()) room.setViewRotation(this.step);
+    this.office.setViewRotation(this.step);
+    this.pm.setViewAngle(viewAngle(this.step));
   }
 
   /** Runner id of the room containing world point (x, z), if any. */
   roomAt(x: number, z: number): string | null {
     for (const [id, room] of this.rooms) if (rectContains(room.rect, x, z)) return id;
     return null;
+  }
+
+  /** True if world point (x, z) is inside the project manager's office. */
+  pmOfficeAt(x: number, z: number): boolean {
+    return inOffice(x, z);
+  }
+
+  /** True if the pointer (NDC) is over the project manager character. */
+  pickPm(ndc: THREE.Vector2, camera: THREE.Camera): boolean {
+    this.raycaster.setFromCamera(ndc, camera);
+    return this.raycaster.intersectObject(this.pm.group, true).length > 0;
   }
 
   select(id: string | null): void {
@@ -133,8 +165,11 @@ export class World {
     if (room) this.selection.position.set(room.rect.x0, 0, room.rect.z0);
   }
 
-  /** Per-frame animation (selection pulse). `t` in seconds. */
+  /** Per-frame animation (selection pulse, PM). `t` in seconds. */
   tick(t: number): void {
+    const dt = this.lastT === null ? 0 : Math.min(t - this.lastT, 0.1);
+    this.lastT = t;
+    this.pm.tick(dt);
     if (this.selection.visible) {
       this.selectionMat.emissive
         .setHex(COLORS.selection)
@@ -190,6 +225,9 @@ export class World {
   dispose(): void {
     for (const r of this.rooms.values()) r.dispose();
     this.rooms.clear();
+    this.pm.dispose();
+    this.root.remove(this.pm.group);
+    this.office.dispose();
     this.kit.dispose();
     this.ground.geometry.dispose();
     this.ground.material.map?.dispose();
@@ -221,12 +259,20 @@ export function corridorParts(ext: GridExtent, occupied: Set<number>, cfg: Layou
   // Kerb around the building.
   const k = 0.25;
   const kc = 0xb8b2a2;
-  parts.push({
-    pool: 'box',
-    pos: [ext.width / 2, -0.12, -k / 2],
-    size: [ext.width + 2 * k, 0.2, k],
-    color: kc,
-  });
+  // The north kerb is split around the project manager's office.
+  const gx0 = PM_OFFICE.x0;
+  const gx1 = PM_OFFICE.x0 + PM_OFFICE.w;
+  for (const [a, b] of [
+    [-k, gx0],
+    [gx1, ext.width + k],
+  ] as const) {
+    parts.push({
+      pool: 'box',
+      pos: [(a + b) / 2, -0.12, -k / 2],
+      size: [b - a, 0.2, k],
+      color: kc,
+    });
+  }
   parts.push({
     pool: 'box',
     pos: [ext.width / 2, -0.12, ext.depth + k / 2],
